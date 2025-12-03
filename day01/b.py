@@ -5,38 +5,87 @@
 import requests
 import os
 import sys
+import tracemalloc
+import argparse
+import time
+from functools import wraps
 from dotenv import load_dotenv
 
 load_dotenv()
+BENCHMARK_ENABLED = False
+DAY = 1
 
-# Input handling
-if "-t" in sys.argv:
-    with open("test.txt", "r") as f:
-        lines = [line.strip() for line in f.readlines()]
-else:
-    day = 1
-    url = f"https://adventofcode.com/2025/day/{day}/input"
-    cookies = {
-        "session": os.getenv("AOC_SESSION_COOKIE")
-    }
-    response = requests.get(url, cookies=cookies)
-    response.raise_for_status()
-    lines = [line.strip() for line in response.text.splitlines()]
+def args_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-l", "--local",
+        action="store_true",
+        help="Enable the use of the local input file instead of the complete online input file. (for tests)"
+    )
+    parser.add_argument(
+        "-b", "--benchmark",
+        action="store_true",
+        help="Monitor the time and ressources used by the solution."
+    )
+    return parser.parse_args()
 
-# Solution
-pos = 50
-password = 0
+def input_handler(local = False):
+    if local:
+        with open("local.txt", "r") as f:
+            return [line.strip() for line in f.readlines()]
+    else:
+        url = f"https://adventofcode.com/2025/day/{DAY}/input"
+        cookies = {
+            "session": os.getenv("AOC_SESSION_COOKIE")
+        }
+        response = requests.get(url, cookies=cookies)
+        response.raise_for_status()
+        return [line.strip() for line in response.text.splitlines()]
 
-for line in lines:
-    direction, value = line[0], int(line[1:])
-    if direction == "L":
-        value = -value
+def benchmark(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not BENCHMARK_ENABLED:
+            return func(*args, **kwargs)
 
-    step = 1 if value > 0 else -1
+        tracemalloc.start()
+        start = time.perf_counter_ns()
 
-    for _ in range(abs(value)):
-        pos = (pos + step) % 100
-        if pos == 0:
-            password += 1
+        result = func(*args, **kwargs)
 
-print(password)
+        end = time.perf_counter_ns()
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        print(f"Exec time: {(end - start) / 1_000_000:.3f}ms.")
+        print(f"Mem used: {peak / 1024:.2f}Ko.")
+
+        return result
+    return wrapper
+
+@benchmark
+def solution(content):
+    pos = 50
+    result = 0
+
+    for line in content:
+        direction, value = line[0], int(line[1:])
+        if direction == "L":
+            value = -value
+
+        step = 1 if value > 0 else -1
+
+        for _ in range(abs(value)):
+            pos = (pos + step) % 100
+            if pos == 0:
+                result += 1
+    return result
+
+if __name__ == "__main__":
+    args = args_parser()
+    local_file = args.local
+    BENCHMARK_ENABLED = args.benchmark
+
+    content = input_handler(local_file)
+
+    print(f"Solution: {solution(content)}")
